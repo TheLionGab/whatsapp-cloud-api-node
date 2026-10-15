@@ -8,7 +8,7 @@ Escrito em português abaixo; the code and tests are the documentation.
 
 ## O que este projeto mostra
 
-- Node 20 + TypeScript com `strict` e `noUncheckedIndexedAccess`.
+- Node 22 + TypeScript com `strict` e `noUncheckedIndexedAccess`.
 - Camadas separadas: HTTP (`src/app.ts`), contratos de entrada com Zod
   (`src/schemas.ts`), configuração (`src/config.ts`) e o provider
   externo (`src/services/whatsapp.ts`).
