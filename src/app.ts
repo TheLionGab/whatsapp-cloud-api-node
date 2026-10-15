@@ -1,8 +1,10 @@
 import express from "express";
+import type { IncomingMessage } from "node:http";
 import { pinoHttp } from "pino-http";
 import type { Logger } from "pino";
 import type { AppConfig } from "./config.js";
 import { sendTextSchema } from "./schemas.js";
+import { bearerToken, safeEqual, validSignature } from "./security.js";
 import { type FetchLike, sendTextMessage } from "./services/whatsapp.js";
 
 export interface AppDeps {
@@ -13,11 +15,17 @@ export interface AppDeps {
 
 export function createApp(deps: AppDeps): express.Express {
   const app = express();
-  app.use(express.json());
+  app.use(
+    express.json({
+      verify: (req, _res, buf) => {
+        (req as IncomingMessage & { rawBody?: Buffer }).rawBody = buf;
+      },
+    }),
+  );
   app.use(pinoHttp({ logger: deps.logger }));
 
   app.get("/health", (_req, res) => {
-    res.json({ status: "ok", service: "whatsapp-business-api" });
+    res.json({ status: "ok", service: "whatsapp-cloud-api-node" });
   });
 
   // Verificação do webhook (Meta chama 1x ao cadastrar a URL).
@@ -25,7 +33,9 @@ export function createApp(deps: AppDeps): express.Express {
     const mode = req.query["hub.mode"];
     const token = req.query["hub.verify_token"];
     const challenge = req.query["hub.challenge"];
-    if (mode === "subscribe" && token === deps.config.verifyToken && typeof challenge === "string") {
+    if (mode === "subscribe" && typeof token === "string" &&
+      safeEqual(token, deps.config.verifyToken) &&
+      typeof challenge === "string") {
       res.status(200).send(challenge);
       return;
     }
@@ -34,13 +44,28 @@ export function createApp(deps: AppDeps): express.Express {
 
   // Recepção de eventos (mensagens recebidas, status de entrega/leitura).
   app.post("/webhook", (req, res) => {
-    const body: unknown = req.body;
-    deps.logger.info({ webhook: body }, "webhook recebido");
+    if (deps.config.appSecret) {
+      const raw = (req as IncomingMessage & { rawBody?: Buffer }).rawBody ?? Buffer.alloc(0);
+      if (!validSignature(deps.config.appSecret, raw, req.header("x-hub-signature-256"))) {
+        res.status(401).json({ error: { code: "invalid_signature", message: "assinatura inválida" } });
+        return;
+      }
+    }
+    // Só metadados: o corpo traz telefone e texto de terceiros e não vai para o log.
+    const body = req.body as { object?: unknown; entry?: unknown } | undefined;
+    deps.logger.info(
+      { object: body?.object, entries: Array.isArray(body?.entry) ? body.entry.length : 0 },
+      "webhook recebido",
+    );
     res.json({ received: true });
   });
 
   // Envio de texto via Cloud API.
   app.post("/messages/text", async (req, res) => {
+    if (deps.config.sendApiKey && !safeEqual(bearerToken(req.header("authorization")), deps.config.sendApiKey)) {
+      res.status(401).json({ error: { code: "unauthorized", message: "chave de envio ausente ou inválida" } });
+      return;
+    }
     const parsed = sendTextSchema.safeParse(req.body);
     if (!parsed.success) {
       res.status(400).json({

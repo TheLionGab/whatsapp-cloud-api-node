@@ -15,9 +15,15 @@ Escrito em português abaixo; the code and tests are the documentation.
 - `fetch` entra como dependência opcional da aplicação, então a
   integração é testada sem chamar a Meta.
 - Modo `DRY_RUN`: responde sem enviar nada, para teste local seguro.
-- Testes com Vitest e Supertest (`tests/api.test.ts`, 8 casos):
-  health, verificação de webhook válida e inválida, recebimento,
-  corpo inválido, envio com `fetch` injetado, dry-run e erro do provider.
+- Testes com Vitest e Supertest (`tests/api.test.ts`, 13 casos):
+  health, verificação de webhook válida e inválida, assinatura do webhook
+  (ausente, errada, de outro corpo), chave de envio, corpo inválido,
+  envio com `fetch` injetado, dry-run, erro do provider e validação de config.
+- Segurança: `POST /webhook` confere `X-Hub-Signature-256` (HMAC-SHA256 sobre
+  o corpo cru); `POST /messages/text` exige `Authorization: Bearer`; as
+  comparações são em tempo constante; o corpo do webhook (telefone e texto de
+  terceiros) não vai para o log; sem `WHATSAPP_APP_SECRET` e `SEND_API_KEY`
+  o serviço não sobe fora do dry-run.
 - CI (`.github/workflows/ci.yml`): typecheck, testes, build e um teste
   ponta a ponta local em dry-run.
 
@@ -26,10 +32,12 @@ Escrito em português abaixo; the code and tests are the documentation.
 - `GET /health` retorna `{ "status": "ok" }`.
 - `GET /webhook` responde ao desafio de verificação da Meta
   (`hub.mode`, `hub.verify_token`, `hub.challenge`).
-- `POST /webhook` recebe eventos e retorna `{ "received": true }`.
-- `POST /messages/text` envia texto: `{ "to": "5565999990000", "body": "olá" }`.
+- `POST /webhook` recebe eventos (assinatura obrigatória) e retorna
+  `{ "received": true }`. Assinatura inválida retorna 401.
+- `POST /messages/text` envia texto, com `Authorization: Bearer <SEND_API_KEY>`:
+  `{ "to": "5565999990000", "body": "olá" }`.
 
-Corpo inválido retorna 400. Falha do provider retorna 502.
+Chave ausente retorna 401, corpo inválido 400 e falha do provider 502.
 
 ## Rodar
 
@@ -38,13 +46,14 @@ npm install
 npm run dev
 ```
 
-Variáveis de ambiente (nenhuma é obrigatória em `DRY_RUN`):
+Variáveis de ambiente (em `DRY_RUN` só `WHATSAPP_VERIFY_TOKEN` é obrigatório):
 
 - `PORT` (padrão 3000)
 - `WHATSAPP_TOKEN` e `WHATSAPP_PHONE_NUMBER_ID`: credenciais do app na Meta
-- `WHATSAPP_VERIFY_TOKEN`: texto que você inventa e cadastra no painel
+- `WHATSAPP_VERIFY_TOKEN` (sempre obrigatório): texto que você inventa e cadastra no painel
+- `SEND_API_KEY`: chave que seus clientes mandam em `Authorization: Bearer`
 - `WHATSAPP_GRAPH_VERSION` (padrão `v22.0`)
-- `WHATSAPP_APP_SECRET`: reservado para a validação de assinatura
+- `WHATSAPP_APP_SECRET`: valida a assinatura do webhook
 - `DRY_RUN=true`: não chama a Meta
 
 ## Verificação
@@ -58,8 +67,7 @@ npm run test:local   # sobe o servidor e exercita tudo em dry-run
 
 ## Limites conhecidos
 
-- Não valida `X-Hub-Signature-256` ainda (`WHATSAPP_APP_SECRET` está
-  reservado para isso).
+- Sem limite de taxa nem rotação de chave de envio.
 - Sem templates, mídia, fila, retry nem persistência de status.
 - Não foi testado contra a API real da Meta neste repositório: a
   integração é coberta por `fetch` injetado.
