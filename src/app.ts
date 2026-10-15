@@ -2,6 +2,7 @@ import express from "express";
 import type { IncomingMessage } from "node:http";
 import { pinoHttp } from "pino-http";
 import type { Logger } from "pino";
+import { httpSerializers } from "./logger.js";
 import type { AppConfig } from "./config.js";
 import { sendTextSchema } from "./schemas.js";
 import { bearerToken, safeEqual, validSignature } from "./security.js";
@@ -22,7 +23,7 @@ export function createApp(deps: AppDeps): express.Express {
       },
     }),
   );
-  app.use(pinoHttp({ logger: deps.logger }));
+  app.use(pinoHttp({ logger: deps.logger, serializers: httpSerializers }));
 
   app.get("/health", (_req, res) => {
     res.json({ status: "ok", service: "whatsapp-cloud-api-node" });

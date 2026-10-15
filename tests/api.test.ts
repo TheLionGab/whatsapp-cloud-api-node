@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import request from "supertest";
 import { createHmac } from "node:crypto";
+import { Writable } from "node:stream";
 import { createApp } from "../src/app.js";
 import { createLogger } from "../src/logger.js";
 import { loadConfig, type AppConfig } from "../src/config.js";
@@ -153,5 +154,30 @@ describe("config", () => {
 
   it("no dry-run dispensa os dois", () => {
     expect(() => loadConfig({ WHATSAPP_VERIFY_TOKEN: "v", DRY_RUN: "true" })).not.toThrow();
+  });
+});
+
+describe("log de requisição", () => {
+  it("não grava o verify token da query nem credenciais", async () => {
+    const linhas: string[] = [];
+    const stream = new Writable({
+      write(chunk: Buffer, _enc, cb) {
+        linhas.push(chunk.toString());
+        cb();
+      },
+    });
+    const app = createApp({ config: baseConfig, logger: createLogger(stream), fetchImpl: undefined });
+    await request(app)
+      .get("/webhook")
+      .query({ "hub.mode": "subscribe", "hub.verify_token": "segredo", "hub.challenge": "abc" })
+      .set("Cookie", "sessao=cookie-secreto")
+      .set("Authorization", "Bearer token-secreto");
+    await new Promise((r) => setTimeout(r, 30));
+    const tudo = linhas.join("");
+    expect(tudo).toContain('"url":"/webhook"');
+    expect(tudo).not.toContain("segredo");
+    expect(tudo).not.toContain("cookie-secreto");
+    expect(tudo).not.toContain("token-secreto");
+    expect(tudo).not.toContain("hub.verify_token");
   });
 });

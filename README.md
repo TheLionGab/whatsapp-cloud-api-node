@@ -15,14 +15,15 @@ Escrito em português abaixo; the code and tests are the documentation.
 - `fetch` entra como dependência opcional da aplicação, então a
   integração é testada sem chamar a Meta.
 - Modo `DRY_RUN`: responde sem enviar nada, para teste local seguro.
-- Testes com Vitest e Supertest (`tests/api.test.ts`, 13 casos):
+- Testes com Vitest e Supertest (`tests/api.test.ts`, 14 casos):
   health, verificação de webhook válida e inválida, assinatura do webhook
   (ausente, errada, de outro corpo), chave de envio, corpo inválido,
-  envio com `fetch` injetado, dry-run, erro do provider e validação de config.
+  envio com `fetch` injetado, dry-run, erro do provider e validação de config e log sem token nem query.
 - Segurança: `POST /webhook` confere `X-Hub-Signature-256` (HMAC-SHA256 sobre
   o corpo cru); `POST /messages/text` exige `Authorization: Bearer`; as
   comparações são em tempo constante; o corpo do webhook (telefone e texto de
-  terceiros) não vai para o log; sem `WHATSAPP_APP_SECRET` e `SEND_API_KEY`
+  terceiros) e a query da URL (que traz o `hub.verify_token`) não vão para o
+  log, e cookie e `Authorization` saem mascarados; sem `WHATSAPP_APP_SECRET` e `SEND_API_KEY`
   o serviço não sobe fora do dry-run.
 - CI (`.github/workflows/ci.yml`): typecheck, testes, build e um teste
   ponta a ponta local em dry-run.
